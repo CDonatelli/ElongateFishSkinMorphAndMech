@@ -1,0 +1,499 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Read in Data
+```{r}
+library(ggplot2)
+library(Hmisc)
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(dplyr)
+library(tidyverse)
+library(stats)
+library(ggthemes)
+library(bbmle) #for AICtab()
+library(ape)
+library(nlme)
+library(geiger)
+library("phytools")
+
+library(patchwork)
+library(emmeans)
+library(multcompView)
+
+fiberAngles <- read_excel("Z:/Erin/AllDataMerged.xlsx")
+kineMech <- read_excel("Z:/Erin/StiffnessData.xlsx")
+
+fiberAngles <- mutate(fiberAngles, unique.id = paste0(Species, "_", Individual))
+
+forwardAngle <- filter(fiberAngles, Direction ==0)
+backwardAngle <- filter(fiberAngles, Direction ==1)
+
+modelTesting <- read_csv("D:/OneDrive/Documents/Dissertation/04.Chapter 3/SkinStats/fibermodel_verification_data_CD.csv")
+```
+
+Interpolate fiber angle data for comparison with kinematics and mechanics
+```{r}
+# TestDatAng <- filter(forwardAngle, unique.id == "Aflavidus_1")
+# TestDatMec <- filter(kineMech, unique.id == "Aflavidus_1")
+# 
+# f = approxfun(x = TestDatAng$Position, y = TestDatAng$Angle, rule = 1, method = 'constant')
+# TestDatMec <- mutate(TestDatMec, ForwardFiberAngle = f(Position))
+# 
+# ggplot() + 
+#   geom_point(data = TestDatMec, aes(x = Position, y = ForwardFiberAngle), color = "red") +
+#   geom_point(data = TestDatAng, aes(x = Position, y = Angle), color = "blue") 
+
+fiberAngles_kine <- read_excel("Z:/Erin/AllDataMerged_kine.xlsx")
+kineMech <- read_excel("Z:/Erin/StiffnessData_fib.xlsx")
+
+fiberAngles_kine <- mutate(fiberAngles_kine, unique.id = paste0(Species, "_", Individual))
+kineMech <- mutate(kineMech, GJ = G*J)
+kineMech <- mutate(kineMech, unique.id = paste0(Species, "_", Individual))
+
+forwardAngle_kine <- filter(fiberAngles_kine, Direction ==0)
+backwardAngle_kine <- filter(fiberAngles_kine, Direction ==1)
+
+
+##### Forwards Angles ####
+kineMech$ForwardFiberAngle <- NA
+Individuals = levels(as.factor(forwardAngle_kine$unique.id))
+InterpForwardAngles <- data.frame()
+for (i in 1:length(Individuals)){
+  TestDatAng <- filter(forwardAngle_kine, unique.id == Individuals[i])
+  TestDatMec <- filter(kineMech, unique.id == Individuals[i])
+  
+  f = approxfun(x = TestDatAng$Position, y = TestDatAng$Angle, rule = 2, method = 'linear')
+  InterpForwardAngles <- rbind(InterpForwardAngles,
+                               as.data.frame(f(TestDatMec$Position)))
+}
+names(InterpForwardAngles)[1] <- "ForwardFiberAngle"
+kineMech$ForwardFiberAngle <- InterpForwardAngles$ForwardFiberAngle
+######
+
+##### Backwards Angles ####
+kineMech$BackwardFiberAngle <- NA
+Individuals = levels(as.factor(backwardAngle_kine$unique.id))
+InterpBackwardAngles <- data.frame()
+for (i in 1:length(Individuals)){
+  TestDatAng <- filter(backwardAngle_kine, unique.id == Individuals[i])
+  TestDatMec <- filter(kineMech, unique.id == Individuals[i])
+  
+  f = approxfun(x = TestDatAng$Position, y = TestDatAng$Angle, rule = 2, method = 'linear')
+  InterpBackwardAngles <- rbind(InterpBackwardAngles,
+                               as.data.frame(f(TestDatMec$Position)))
+}
+names(InterpBackwardAngles)[1] <- "BackwardFiberAngle"
+kineMech$BackwardFiberAngle <- InterpBackwardAngles$BackwardFiberAngle
+
+```
+
+Mechanics and Kinematics Statistics (everything included)
+```{r}
+#### Forward Fiber Angle
+# FFwobble.anova <- aov(Wobble ~ Position + Species + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Species:ForwardFiberAngle, data = kineMech)
+# anova(FFwobble.anova)
+# 
+# FFG.anova <- aov(G ~ Position + Species + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Species:ForwardFiberAngle, data = kineMech)
+# anova(FFG.anova)
+# 
+# FFGJ.anova <- aov(GJ ~ Position + Species + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Species:ForwardFiberAngle, data = kineMech)
+# anova(FFGJ.anova)
+
+#### Backward Fiber Angle
+# BFwobble.anova <- aov(Wobble ~ Position + Species + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Species:BackwardFiberAngle,  data = kineMech)
+# anova(BFwobble.anova)
+# 
+# BFG.anova <- aov(G ~ Position + Species + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Species:BackwardFiberAngle, data = kineMech)
+# anova(BFG.anova)
+# 
+# BFGJ.anova <- aov(GJ ~ Position + Species + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Species:BackwardFiberAngle, data = kineMech)
+# anova(BFGJ.anova)
+
+#### All Fiber Angles
+wobble.anova <- aov(Wobble ~ Position + Species + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Species:BackwardFiberAngle + Position:Species:ForwardFiberAngle,  data = kineMech)
+anova(wobble.anova)
+
+G.anova <- aov(G ~ Position + Species + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Species:BackwardFiberAngle + Position:Species:ForwardFiberAngle, data = kineMech)
+anova(G.anova)
+
+GJ.anova <- aov(GJ ~ Position + Species + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Species:BackwardFiberAngle + Position:Species:ForwardFiberAngle, data = kineMech)
+anova(GJ.anova)
+```
+
+Replace Species with Habitat
+```{r}
+#### Forward Fiber Angle
+FFwobble.anova3 <- aov(Wobble ~ Position + Habitat + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:ForwardFiberAngle, data = kineMech)
+anova(FFwobble.anova3)
+
+FFG.anova3 <- aov(G ~ Position + Habitat + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:ForwardFiberAngle, data = kineMech)
+anova(FFG.anova3)
+
+FFGJ.anova3 <- aov(GJ ~ Position + Habitat + ForwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:ForwardFiberAngle, data = kineMech)
+anova(FFGJ.anova3)
+
+#### Backward Fiber Angle
+BFwobble.anova3 <- aov(Wobble ~ Position + Habitat + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Habitat:BackwardFiberAngle,  data = kineMech)
+anova(BFwobble.anova3)
+
+BFG.anova3 <- aov(G ~ Position + Habitat + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Habitat:BackwardFiberAngle, data = kineMech)
+anova(BFG.anova3)
+
+BFGJ.anova3 <- aov(GJ ~ Position + Habitat + BackwardFiberAngle + Position:BackwardFiberAngle + Position:Habitat:BackwardFiberAngle, data = kineMech)
+anova(BFGJ.anova3)
+
+#### All Fiber Angles
+wobble.anova <- aov(Wobble ~ Position + Habitat + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:BackwardFiberAngle + Position:Habitat:ForwardFiberAngle,  data = kineMech)
+anova(wobble.anova)
+
+G.anova <- aov(G ~ Position + Habitat + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:BackwardFiberAngle + Position:Habitat:ForwardFiberAngle, data = kineMech)
+anova(G.anova)
+
+GJ.anova <- aov(GJ ~ Position + Habitat + BackwardFiberAngle + ForwardFiberAngle + Position:BackwardFiberAngle + Position:ForwardFiberAngle + Position:Habitat:BackwardFiberAngle + Position:Habitat:ForwardFiberAngle, data = kineMech)
+anova(GJ.anova)
+```
+
+Morpholohy Statistics
+```{r}
+# res.aov2 <- aov(Angle ~ Position + Species + Position:Species, data = forwardAngle)
+# anova(res.aov2)
+# 
+# res.aov3 <- aov(Angle ~ Position + Species + Position:Species, data = backwardAngle)
+# anova(res.aov3)
+# 
+# res.aov4 <- aov(Angle ~ Position + Species + as.factor(Direction) + Position:Species + Position:as.factor(Direction) +
+#                   as.factor(Direction):Species + as.factor(Direction):Species:Position, data = fiberAngles)
+# anova(res.aov4)
+
+# aov(Y ~ A/B, data=d)
+# aov(Y ~ A + B %in% A, data=d)
+# aov(Y ~ A + A:B, data=d)
+
+res.aov5 <- aov(Angle ~ Position + Species %in% Habitat + as.factor(Direction) + Position:Species %in% Habitat + Position:as.factor(Direction) +
+                  as.factor(Direction):Species %in% Habitat + 
+                  as.factor(Direction):Species %in% Habitat:Position, 
+                  data = fiberAngles)
+anova(res.aov5)
+```
+
+Bending Tests Statistics
+```{r}
+bendingAnovaEI <- lmer(EI ~ Angle * Frequency + (1 | Number), data = modelTesting)
+anova(bendingAnovaEI)
+summary(bendingAnovaEI)
+
+bendingAnovaE <- lmer(E ~ Angle + Frequency + Amplitude + (1 | Number), data = modelTesting)
+anova(bendingAnovaEI)
+```
+
+%%%%%% START Old Stats Code %%%%%%%
+Phylo-Stats
+```{r}
+# tree <- read.tree(file="actinopt_12k_treePL.tre")
+# my.data <- fiberAngles[fiberAngles$Species %in% tree$tip.label,] # removes species from dataset that are not in tree
+# pruned.tree <-drop.tip(tree,tree$tip.label[-match(my.data$Species, tree$tip.label)]) # prunes tree to only include species in your data; FYI, there is a new "keep.tip" function in the latest version of ape that is the inverse of this.
+# tree <- pruned.tree
+# 
+# my.data <- column_to_rownames(my.data, var="Species")
+# 
+# length(tree$tip.label)
+# nrow(my.data)
+# 
+# bm<-corBrownian(1, tree)
+# modelo1<-gls(Angle ~ Position, data=my.data, correlation=bm)
+# summary(modelo1)
+```
+
+Mechanics and Kinematics Statistics (Species and Angle only)
+```{r}
+#### Forward Fiber Angle
+# FFwobble.anova1 <- aov(Wobble ~ Species + ForwardFiberAngle + Species:ForwardFiberAngle, data = kineMech)
+# anova(FFwobble.anova1)
+# 
+# FFG.anova1 <- aov(G ~ Species + ForwardFiberAngle + Species:ForwardFiberAngle, data = kineMech)
+# anova(FFG.anova1)
+# 
+# FFGJ.anova1 <- aov(GJ ~ Species + ForwardFiberAngle + Species:ForwardFiberAngle, data = kineMech)
+# anova(FFGJ.anova1)
+# 
+# #### Backward Fiber Angle
+# BFwobble.anova1 <- aov(Wobble ~ Species + BackwardFiberAngle + Species:BackwardFiberAngle,  data = kineMech)
+# anova(BFwobble.anova1)
+# 
+# BFG.anova1 <- aov(G ~ Species + BackwardFiberAngle + Species:BackwardFiberAngle, data = kineMech)
+# anova(BFG.anova1)
+# 
+# BFGJ.anova1 <- aov(GJ ~ Species + BackwardFiberAngle + Species:BackwardFiberAngle, data = kineMech)
+# anova(BFGJ.anova1)
+```
+
+Mechanics and Kinematics Statistics (Angle alone removed)
+```{r}
+# #### Forward Fiber Angle
+# FFwobble.anova2 <- aov(Wobble ~ Position + Species + Position:ForwardFiberAngle, data = kineMech)
+# anova(FFwobble.anova2)
+# 
+# FFG.anova2 <- aov(G ~ Position + Species + Position:ForwardFiberAngle, data = kineMech)
+# anova(FFG.anova2)
+# 
+# FFGJ.anova2 <- aov(GJ ~ Position + Species + Position:ForwardFiberAngle, data = kineMech)
+# anova(FFGJ.anova2)
+# 
+# #### Backward Fiber Angle
+# BFwobble.anova2 <- aov(Wobble ~ Position + Species  + Position:BackwardFiberAngle,  data = kineMech)
+# anova(BFwobble.anova2)
+# 
+# BFG.anova2 <- aov(G ~ Position + Species + Position:BackwardFiberAngle, data = kineMech)
+# anova(BFG.anova2)
+# 
+# BFGJ.anova2 <- aov(GJ ~ Position + Species + Position:BackwardFiberAngle, data = kineMech)
+# anova(BFGJ.anova2)
+```
+
+Which model fits best? (AIC table)
+```{r}
+
+# AICtab(FFwobble.anova, FFwobble.anova1, FFwobble.anova2, FFwobble.anova3)
+# AICtab(FFG.anova, FFG.anova1, FFG.anova2, FFG.anova3)
+# AICtab(FFGJ.anova, FFGJ.anova1, FFGJ.anova2, FFGJ.anova3)
+# 
+# AICtab(BFwobble.anova, BFwobble.anova1, BFwobble.anova2, BFwobble.anova3)
+# AICtab(BFG.anova, BFG.anova1, BFG.anova2, BFG.anova3)
+# AICtab(BFGJ.anova, BFGJ.anova1, BFGJ.anova2, BFGJ.anova3)
+
+```
+
+Create a data frame with coeficieints of fit lines to attempt cleaner plots
+```{r}
+# PLSdataFrame <- kineMech %>%
+#     group_by(unique.id) %>% #for each individual...
+#     summarise(X.FFA.I = lm(ForwardFiberAngle ~ poly(Position, 1)) %>% coef() %>% .[1],  #fit a polynomial, get coeficient
+#               X.FFA.p1 = lm(ForwardFiberAngle ~ poly(Position, 1)) %>% coef() %>% .[2], #...slot 2
+#               X.FFA.mean = mean(ForwardFiberAngle,na.rm = TRUE), #...slot 3
+#               X.BFA.I = lm(BackwardFiberAngle ~ poly(Position, 1)) %>% coef() %>% .[1],
+#               X.BFA.p1 = lm(BackwardFiberAngle ~ poly(Position, 1)) %>% coef() %>% .[2],
+#               X.BFA.mean = mean(BackwardFiberAngle,na.rm = TRUE),
+#               X.Wob.I = lm(Wobble ~ poly(Position, 1)) %>% coef() %>% .[1],
+#               X.Wob.p1 = lm(Wobble ~ poly(Position, 1)) %>% coef() %>% .[2],
+#               X.Wob.mean = mean(Wobble,na.rm = TRUE),
+#               X.GJ.I = lm(GJ ~ poly(Position, 1)) %>% coef() %>% .[1],
+#               X.GJ.p1 = lm(GJ ~ poly(Position, 1)) %>% coef() %>% .[2],
+#               X.GJ.mean = mean(GJ,na.rm = TRUE),
+#               X.G.I = lm(G ~ poly(Position, 1)) %>% coef() %>% .[1],
+#               X.G.p1 = lm(G ~ poly(Position, 1)) %>% coef() %>% .[2],
+#               X.G.mean = mean(G,na.rm = TRUE)) %>%
+#     separate(unique.id, by = "_", into = c("Species", "Individual"))
+#   
+#   # Get the habitat data back
+#   hab_data <- kineMech %>%
+#     group_by(Species) %>%
+#     summarise(Habitat = first(Habitat))
+#   
+#   PLSdataFrame <- right_join(PLSdataFrame, hab_data)
+```
+%%%%%% END Old Stats Code %%%%%%%%%
+
+Kinematics and Mechanics Plots
+```{r}
+kineMech$WobbleBin <- cut(kineMech$Wobble, c(0, 0.3, 0.6, 1))
+kineMech$bin2 <- cut(kineMech$BackwardFiberAngle, c(40, 48, 58, 68, 70))
+kineMech$bin3 <- cut(kineMech$ForwardFiberAngle, c(40, 48, 58, 68, 70))
+kineMech$PositionBin <-cut(kineMech$Position, c(0, 0.333, 0.666, 1))
+
+
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=ForwardFiberAngle, color=Habitat))+
+  #geom_point(aes(x=Position, y=Wobble, color=Habitat))+
+  geom_smooth(aes(x=Position, y=ForwardFiberAngle, color=Habitat), method="lm", se=FALSE)+
+  geom_smooth(aes(x=Position, y=(Wobble+ 3)*15, color=Habitat),linetype = 2, method="lm", se=FALSE)+
+  scale_y_continuous(sec.axis = sec_axis((~./15 - 3), name = "Wobble"))+
+  scale_color_economist()+
+  theme_minimal()
+  ggsave(file="PosVWobandFFA.eps", width = 12, height = 8, units = "cm")
+
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=BackwardFiberAngle, color=Habitat))+
+  #geom_point(aes(x=Position, y=Wobble, color=Habitat))+
+  geom_smooth(aes(x=Position, y=BackwardFiberAngle, color=Habitat), method="lm", se=FALSE)+
+  geom_smooth(aes(x=Position, y=(Wobble+ 3)*15, color=Habitat),linetype = 2, method="lm", se=FALSE)+
+  scale_y_continuous(sec.axis = sec_axis((~./15 - 3), name = "Wobble"))+
+  scale_color_economist()+
+  theme_minimal()
+  ggsave(file="PosVWobandBFA.eps", width = 12, height = 8, units = "cm")
+  
+  
+  
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=ForwardFiberAngle, color=Species))+
+  geom_smooth(aes(x=Position, y=ForwardFiberAngle, color=Species), method="lm", se=FALSE)+
+  scale_color_economist()+
+  theme_classic()+
+  theme(axis.title.x = element_text(size=12),
+      axis.title.y = element_text(size=12),
+      axis.text.y = element_text(size=10, color = 'black'),
+      axis.text.x = element_text(size=10, color = 'black'),
+      axis.line = element_line(size = 1, linetype = "solid"),
+      axis.ticks = element_line(size = 1, color = 'black'),
+      legend.text=element_text(size=10),
+      legend.title = element_text(size=12))+
+  ggsave(file="PosVFFAS.eps", width = 12, height = 8, units = "cm")
+
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=BackwardFiberAngle, color=Species))+
+  geom_smooth(aes(x=Position, y=BackwardFiberAngle, color=Species), method="lm", se=FALSE)+
+  scale_color_economist()+
+  theme_classic()+
+    theme(axis.title.x = element_text(size=12),
+      axis.title.y = element_text(size=12),
+      axis.text.y = element_text(size=10, color = 'black'),
+      axis.text.x = element_text(size=10, color = 'black'),
+      axis.line = element_line(size = 1, linetype = "solid"),
+      axis.ticks = element_line(size = 1, color = 'black'),
+      legend.text=element_text(size=10),
+      legend.title = element_text(size=12))+
+  ggsave(file="PosVBFAS.eps", width = 12, height = 8, units = "cm")
+
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=Wobble, color=Species))+
+  geom_smooth(aes(x=Position, y=Wobble, color=Species), method="lm", se=FALSE)+
+  scale_color_economist()+
+  theme_classic()+
+    theme(axis.title.x = element_text(size=12),
+      axis.title.y = element_text(size=12),
+      axis.text.y = element_text(size=10, color = 'black'),
+      axis.text.x = element_text(size=10, color = 'black'),
+      axis.line = element_line(size = 1, linetype = "solid"),
+      axis.ticks = element_line(size = 1, color = 'black'),
+      legend.text=element_text(size=10),
+      legend.title = element_text(size=12))+
+  ggsave(file="PosVWobS.eps", width = 12, height = 8, units = "cm")
+
+kineMech <- mutate(kineMech, RelFiberAngle = (BackwardFiberAngle+ForwardFiberAngle)/2)
+
+ggplot(data = kineMech)+
+  geom_point(aes(x=Position, y=RelFiberAngle, color=Species))+
+  geom_smooth(aes(x=Position, y=RelFiberAngle, color=Species), method="lm", se=FALSE)+
+  scale_color_economist()+
+  theme_classic()+
+    theme(axis.title.x = element_text(size=12),
+      axis.title.y = element_text(size=12),
+      axis.text.y = element_text(size=10, color = 'black'),
+      axis.text.x = element_text(size=10, color = 'black'),
+      axis.line = element_line(size = 1, linetype = "solid"),
+      axis.ticks = element_line(size = 1, color = 'black'),
+      legend.text=element_text(size=10),
+      legend.title = element_text(size=12))
+  ggsave(file="PosVBFAS.eps", width = 12, height = 8, units = "cm")
+```
+
+Morphology Scatterplots (All angles)
+```{r}
+ggplot(forwardAngle, aes(x = Position, y = Angle, color = Species, size=Direction)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "gam", formula = y ~ poly(x, 2), se = FALSE, size = 2) +
+  theme_tufte()+xlab("Position")+ylab("Fiber Angle (degrees)")+
+  theme(axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        axis.text.y = element_text(size=20, color = 'black'),
+        axis.text.x = element_text(size=20, color = 'black'),
+        plot.title = element_text(size=24, face="bold.italic",hjust = 0.5),
+        axis.line = element_line(size = 2, linetype = "solid"),
+        axis.ticks = element_line(size = 2),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=20))
+
+ggplot(backwardAngle, aes(x = Position, y = Angle, color = Species, size=Direction)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "gam", formula = y ~ poly(x, 2), se = FALSE, size = 2) +
+  theme_tufte()+xlab("Position")+ylab("Fiber Angle (degrees)")+
+  theme(axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        axis.text.y = element_text(size=20, color = 'black'),
+        axis.text.x = element_text(size=20, color = 'black'),
+        plot.title = element_text(size=24, face="bold.italic",hjust = 0.5),
+        axis.line = element_line(size = 2, linetype = "solid"),
+        axis.ticks = element_line(size = 2),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=20))
+```
+
+Morphology Boxplots (All angles)
+```{r}
+forwardAngle$bin <- cut(forwardAngle$Position, c(0, 0.3, 0.6, 0.90, 1))
+backwardAngle$bin <- cut(backwardAngle$Position, c(0, 0.3, 0.6, 0.90, 1))
+head(backwardAngle)
+
+ggplot(data=forwardAngle) + 
+  geom_boxplot(aes(x=factor(bin), y=Angle, fill=factor(Species))) +
+  geom_smooth(aes(x=as.integer(bin),y=Angle,color=Species),method = "lm", formula = y ~ I(x^2),se=FALSE, size=1)+
+  theme_minimal() +
+  scale_fill_economist() +
+  scale_color_economist() +
+  ylab("Angle (degrees)")+
+  xlab("Position along Body")+ ggtitle("Forward Facing Angles") +
+  guides(fill=guide_legend(title="Species"))+
+  geom_hline(yintercept = 45) + 
+  geom_hline(yintercept = 55) +
+  theme(
+    axis.text.x = element_text(size=10),
+    axis.text.y = element_text(size=10),
+    axis.title.y = element_text(size=12),
+    axis.title.x = element_text(size=12),
+    legend.text = element_text(size=10),
+    legend.title = element_text(size=12),
+    plot.title = element_text(size = 12))+
+  ylim(5,75)+
+  ggsave(file="forwardAngles.eps", width = 10, height = 6, units = "cm")
+
+ggplot(data=backwardAngle) + 
+  geom_boxplot(aes(x=factor(bin), y=Angle, fill=factor(Species))) +
+  geom_smooth(aes(x=as.integer(bin),y=Angle,color=Species),method = "lm", formula = y ~ I(x^2),se=FALSE, size=1)+
+  theme_minimal() +
+  scale_fill_economist() +
+  scale_color_economist() +
+  ylab("Angle (degrees)")+
+  xlab("Position along Body")+ ggtitle("Backward Facing Angles") +
+  guides(fill=guide_legend(title="Species"))+
+  geom_hline(yintercept = 45) + 
+  geom_hline(yintercept = 55) +
+  theme(
+    axis.text.x = element_text(size=10),
+    axis.text.y = element_text(size=10),
+    axis.title.y = element_text(size=12),
+    axis.title.x = element_text(size=12),
+    legend.text = element_text(size=10),
+    legend.title = element_text(size=12),
+    plot.title = element_text(size = 12))+
+  ylim(5,75)+
+  ggsave(file="backwardAngles.eps", width = 10, height = 6, units = "cm")
+
+```
+
+Bending Plots
+```{r}
+models.50 <- filter(modelTesting, Frequency %in% c(1, 3, 5))
+#models.50 <- filter(models.50, Frequency %in% c(1, 3, 5))
+
+ggplot(data=models.50) + 
+  geom_boxplot(aes(x=factor(Angle), y=EI, fill=factor(Frequency))) +
+  theme_base()+
+  scale_fill_economist() +
+  scale_color_economist() +
+  guides(fill=guide_legend(title="Bending Frequency"))+
+  ylab("Bending Stiffness (Nm^2)") + xlab("Fiber Angle")+
+  theme(
+     axis.text.x = element_text(size=10),
+     axis.text.y = element_text(size=12),
+    axis.title.y = element_text(size=12),
+    axis.title.x = element_text(size=12),
+     legend.text = element_text(size=10),
+    legend.title = element_text(size=10),
+      plot.title = element_text(size = 12))+
+  ggsave(file = "PhysicalModelsVerification.eps", width = 14, height = 8, units = "cm")
+
+```
+
+
